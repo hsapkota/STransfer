@@ -319,10 +319,13 @@ public class STSender {
                         head.offset += length;
                         if (head.offset < head.length) {
                             STSender.files.add(head);
-                        }else if (this.stSender.last_file_id < this.stSender.total_files * 3.5){
+                        }
+                        /*
+                        else if (this.stSender.last_file_id < this.stSender.total_files * 3.5){
                             STSender.files.add(new TransferFile(head.file, head.filename, 0l, head.length, this.stSender.last_file_id++));
                             STSender.totalByteToSend += head.length;
                         }
+                        //*/
                     }
                 }
                 try {
