@@ -6,8 +6,14 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.concurrent.*;
 import java.util.concurrent.atomic.AtomicLong;
+import java.lang.management.ManagementFactory;
+import java.lang.management.OperatingSystemMXBean;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 public class STReceiver {
+    private int queueSize = 10;
+    private int tcpBuffer = 100;
     private int numberOfWrite = 2;
     private int sizeOfQueue = 100;
     private boolean debug = false;
@@ -18,6 +24,7 @@ public class STReceiver {
     private String throughputMessage = "";
     private Boolean transferDone = false;
     private long numberOfMaxConnections = 0;
+    private int numberOfReceive = 0;
     private AtomicLong totalWriteDone = new AtomicLong(0);
     private AtomicLong totalTransferDone = new AtomicLong(0);
     private long tillLastWrite = 0l;
@@ -32,6 +39,22 @@ public class STReceiver {
     private HashMap<Integer, STReceiver.ReceiveFile> receiveBlocks = new HashMap<>();
     private static LinkedBlockingQueue<Block> blocks = new LinkedBlockingQueue<>(1500);
     private HashMap<String, RandomAccessFile> filesNames = new HashMap<>();
+
+    private static void printUsage() {
+        OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
+        for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
+            method.setAccessible(true);
+            if (Modifier.isPublic(method.getModifiers())) {
+                    Object value;
+                try {
+                    value = method.invoke(operatingSystemMXBean);
+                } catch (Exception e) {
+                    value = e;
+                } // try
+                System.out.println(method.getName() + " = " + value);
+            } // if
+        } // for
+    }
 
     public STReceiver(){
 
@@ -50,6 +73,20 @@ public class STReceiver {
         long iter = 0l;
         long tillCertainTransfer = 0l;
         long lastCertainTime = 0l;
+        OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
+        Method my_method = null;
+        for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
+            method.setAccessible(true);
+            if (method.getName().startsWith("getProcessCpuLoad")
+                && Modifier.isPublic(method.getModifiers())) {
+                    Object value;
+                try {
+                    my_method = method;
+                } catch (Exception e) {
+                    value = e;
+                } // try
+            } // if
+        } // for
         while(!str.transferDone){
             if(str.startTime != 0) {
                 long totalTransfer = str.totalTransferDone.get();
@@ -77,6 +114,21 @@ public class STReceiver {
                         //*/
                         System.out.println("Transfer Done till: " + totalW / (1024. * 1024.) + "MB in time: "+(System.currentTimeMillis() - str.startTime) / 1000. +
                                 " seconds and thpt is: "+avgThpt+" Mbps"  + " blocks: "+STReceiver.blocks.size());
+                        
+                        // OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
+                        // for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
+                        //     method.setAccessible(true);
+                        //     if (Modifier.isPublic(method.getModifiers())) {
+                        //             Object value;
+                        //         try {
+                        //             value = method.invoke(operatingSystemMXBean);
+                        //         } catch (Exception e) {
+                        //             value = e;
+                        //         } // try
+                        //         System.out.println(method.getName() + " = " + value);
+                        //     } // if
+                        // } // for
+                        
                         tillCertainTransfer = totalW;
                         lastCertainTime = thisTime;
                     }
@@ -154,8 +206,24 @@ public class STReceiver {
         this.receivePool.shutdown();
         this.writePool.shutdown();
     }
+    public void setTCPBuffer(int count){
+        for(int i=this.receiveBlocks.size(); i<count; i++){
+            try {
+                while (this.receiveBlocks.get(i).socket_receive == null){
+                    Thread.sleep(10);
+                }
+                this.receiveBlocks.get(i).socket_receive.setReceiveBufferSize(this.tcpBuffer);
+            }catch(InterruptedException e){
+
+            }catch (IOException ee) {
+
+            }
+        }
+        
+    }
     public void startProbing(){
         this.startWriteThreads(this.numberOfWrite);
+        this.setTCPBuffer(this.numberOfReceive);
     }
     class OpenTransferThread implements Runnable{
         STReceiver stReceiver = null;
@@ -350,7 +418,7 @@ public class STReceiver {
             }
             try {
                 socket_receive = new ServerSocket(port);
-                socket_receive.setReceiveBufferSize(32*1024*1024);
+                // socket_receive.setReceiveBufferSize(32*1024*1024);
                 clientSock = socket_receive.accept();
 
                 dataInputStream = new DataInputStream(clientSock.getInputStream());
@@ -465,7 +533,9 @@ public class STReceiver {
                     }catch(InterruptedException e){ }
                 }
                 String[] params = messages[1].split(",");
-                this.stReceiver.sizeOfQueue = Integer.parseInt(params[5]);
+                this.stReceiver.sizeOfQueue = queueSize;//Integer.parseInt(params[5]);
+                this.stReceiver.numberOfReceive = Integer.parseInt(params[4]);
+                this.stReceiver.tcpBuffer = Integer.parseInt(params[5]) * 1024;
                 ///*
                 synchronized (STReceiver.blocks){
                     STReceiver.blocks = new LinkedBlockingQueue<>(this.stReceiver.sizeOfQueue);

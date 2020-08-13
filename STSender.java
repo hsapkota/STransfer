@@ -3,12 +3,17 @@ import java.net.*;
 import java.util.*;
 import java.util.Queue;
 import java.util.concurrent.*;
+import java.lang.management.ManagementFactory;
+import java.lang.management.OperatingSystemMXBean;
+import java.lang.reflect.Method;
+import java.lang.reflect.Modifier;
 
 public class STSender {
+    private int sizeOfQueue = 100;
+    private int tcpBuffer = 100;
     private String receiverIP = "192.168.1.1";
     private int receiverPort = 48892;
     int numberOfRead = 2;
-    private int sizeOfQueue = 100;
     private int numberOfConnection = 1;
     private int numberOfMaxConnections = 10;
     int clientPort = 52005;
@@ -33,6 +38,22 @@ public class STSender {
     private HashMap<String, List<FileInputStream>> openFiles = new HashMap<>();
 
     static int fileNum = 0;
+
+    private static void printUsage() {
+        OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
+        for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
+            method.setAccessible(true);
+            if (Modifier.isPublic(method.getModifiers())) {
+                    Object value;
+                try {
+                    value = method.invoke(operatingSystemMXBean);
+                } catch (Exception e) {
+                    value = e;
+                } // try
+                System.out.println(method.getName() + " = " + value);
+            } // if
+        } // for
+    }
 
     public STSender(){
 
@@ -101,9 +122,20 @@ public class STSender {
     public void startSendThreads(int count){
         this.stopAllSendThreads();
         System.out.println("" + count + " and the total send threads are "+this.sendBlocks.size());
+        //this.printUsage();
         if(count <= this.sendBlocks.size()) {
             for (int i = 0; i < count; i++) {
                 this.sendBlocks.get(i).startThread();
+                try {
+                    while (this.sendBlocks.get(i).s == null){
+                        Thread.sleep(10);
+                    }
+                    this.sendBlocks.get(i).s.setSendBufferSize(this.tcpBuffer);
+                }catch(InterruptedException e){
+
+                }catch (IOException ee) {
+
+                }
             }
         }
     }
@@ -319,13 +351,10 @@ public class STSender {
                         head.offset += length;
                         if (head.offset < head.length) {
                             STSender.files.add(head);
-                        }
-                        /*
-                        else if (this.stSender.last_file_id < this.stSender.total_files * 3.5){
+                        }else if (this.stSender.last_file_id < this.stSender.total_files){
                             STSender.files.add(new TransferFile(head.file, head.filename, 0l, head.length, this.stSender.last_file_id++));
                             STSender.totalByteToSend += head.length;
                         }
-                        //*/
                     }
                 }
                 try {
@@ -518,7 +547,7 @@ public class STSender {
                 String[] params = messages[1].split(",");
 
                 this.stSender.numberOfRead = Integer.parseInt(params[0]);
-                this.stSender.sizeOfQueue = Integer.parseInt(params[1]);
+                this.stSender.tcpBuffer = Integer.parseInt(params[1]) * 1024;
 
 //                synchronized (STSender.blocks){
 //                    STSender.blocks = new LinkedBlockingQueue<>(this.stSender.sizeOfQueue);

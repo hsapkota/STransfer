@@ -184,15 +184,23 @@ class TalkReceive(Thread):
         self.serversocket = None
         self.client_data, self.client_addr = None, None
         self.zero_count = 0
+        self.should_end = False
         
     def send_message(self, message):
         message = str(message)+"\n"
-        self.socket.send(message.encode())
+        try:
+            self.socket.send(message.encode())
+        except:
+            self.should_end = True
     def get_next_line(self):
-        message = self.socket.recv(1024).decode()
-        while("\n" not in message):
-            message += self.socket.recv(1024).decode()
-        message=message.strip()
+        try:
+            message = self.socket.recv(1024).decode()
+            while("\n" not in message):
+                message += self.socket.recv(1024).decode()
+            message=message.strip()
+        except:
+            message = "the:transfer:is:completed"
+            self.should_end = True
         return message
     def add_throughput(self, message, throughput_started):
         if(message != ""):
@@ -216,6 +224,8 @@ class TalkReceive(Thread):
         self.zero_count = 0
         self.send_message("Parameter:"+self.parameters)
         message = self.get_next_line()
+        if(self.should_end == True):
+            return
         if(message.lower() == "ok"):
             self.talk_send.start_current_probing = True
         while(not self.talk_send.sender_finish_blocks or not self.start_current_probing):
@@ -227,6 +237,8 @@ class TalkReceive(Thread):
         throughput_started = False
         while(not self.stop_current_probing):
             self.send_message("Get Throughput:New")
+            if(self.should_end == True):
+                return
             message = self.get_next_line()
             throughput_started = self.add_throughput(message, throughput_started)
             time.sleep(0.01)
@@ -282,8 +294,12 @@ class GA:
         self.mutation_type = "bit_flip"
         self.selection_type = "standard_deviation_elitist"
         
-        self.params = [[1, 128], [1, 256], [10, 260], [128, 132], [1, 128], [1, 256], [1, 128]]
-        self.param_length = [4,8,0,0,4,8,4]#[4, 6, 6, 6, 4, 6, 4]
+        if(args.manual):
+            self.params = [[args.num, 128], [37, 256], [12, 260], [1, 132], [1, 128], [1, 256], [1, 128]] #12 29 24 27 8 34 7
+            self.param_length = [0,0,0,0,0,0,0]#[4, 6, 6, 6, 4, 6, 4]
+        else:
+            self.params = [[3, 128], [10, 256], [12, 260], [128, 132], [8, 128], [10, 256], [3, 128]] #12 29 24 27 8 34 7
+            self.param_length = [0,8,0,0,0,8,0]#[4, 6, 6, 6, 4, 6, 4]
         self.population_length = 0
         self.agents = []
         self.talk_send = None
@@ -293,28 +309,33 @@ class GA:
         self.best_pop = ""
         self.previous_best_pop = ""
         self.initiate(args)
-        for i in self.param_length:
-            self.population_length += i
-        for i in range(self.number_of_population):
-            self.agents.append(Agents(population="", population_length=self.population_length))
-        if(self.conv == "dnn"):
-            self.load_clfs()
-            print("[+] CLF's loaded")
-        if(self.conv == "rand"):
-            adaptive_iterative.regression_train()
-            adaptive_iterative.classification_train()
-            print("[+] CLF's loaded")
-        print("[+] Conv is ", self.conv)
-        self.mutation_probab = 1.0#/self.population_length
-        self.crossover_probab = 1.0
-        print("[+] Method is ", args.method)
-        if(args.method.lower() == "random"):
-            self.run_random()
+        if(not args.manual):
+            for i in self.param_length:
+                self.population_length += i
+            for i in range(self.number_of_population):
+                self.agents.append(Agents(population="", population_length=self.population_length))
+            if(self.conv == "dnn"):
+                self.load_clfs()
+                print("[+] CLF's loaded")
+            if(self.conv == "rand"):
+                adaptive_iterative.regression_train()
+                adaptive_iterative.classification_train()
+                print("[+] CLF's loaded")
+            print("[+] Conv is ", self.conv)
+            self.mutation_probab = 1.0#/self.population_length
+            self.crossover_probab = 1.0
+            print("[+] Method is ", args.method)
+            if(args.method.lower() == "random"):
+                self.run_random()
+            else:
+                self.run_GA()
+            print_message("Best Population: %s and best score: %d" % (self.best_pop, self.best_score))
+            self.talk_send.parameters = self.best_pop
+            self.talk_receive.parameters = self.best_pop
         else:
-            self.run_GA()
-        print_message("Best Population: %s and best score: %d" % (self.best_pop, self.best_score))
-        self.talk_send.parameters = self.best_pop
-        self.talk_receive.parameters = self.best_pop
+            self.talk_send.parameters = ','.join(str(e[0]) for e in self.params) #self.best_pop
+            self.talk_receive.parameters = ','.join(str(e[0]) for e in self.params) #self.best_pop
+            self.manual_evaluate()
         
         self.talk_send.stop_probing = True
         self.talk_receive.stop_probing = True
@@ -345,6 +366,11 @@ class GA:
                         print_message(str(self.st_client.total_transfer_done) + " Bytes")
                         print_message("[+] Total file transfered is %.3f Bytes" % (int(self.st_client.total_transfer_done)/(1024.*1024.*1024.)))
                         print_message("[+] Average throughput is %.3f Mbps" % ((1000 * 8 * int(self.st_client.total_transfer_done))/((self.st_client.stop_time - self.st_client.start_time)*1000.*1000.)))
+                    print_message("These are the params: " + ','.join(str(e[0]) for e in self.params))
+                    time.sleep(0.02)
+                    self.talk_send._stop.set()
+                    time.sleep(0.05)
+                    self.talk_receive._stop.set()
                     exit(0)
             except:
                 self.talk_send.stop_probing = True
@@ -353,7 +379,7 @@ class GA:
                 print_message("[+ err] Total time for this transfer is %.3f Seconds"%((self.st_client.stop_time - self.st_client.start_time)/1000.))
                 print_message("[+ err] Average throughput is %.3f Mbps" % ((1000 * 8 * int(self.st_client.total_transfer_done))/((self.st_client.stop_time - self.st_client.start_time)*1000.*1000.)))
                 message = True
-                exit(0)
+                sys.exit(0)
         return message
    
     def initiate(self, args):
@@ -598,6 +624,31 @@ class GA:
         self.talk_receive.thpt_list = []
         self.talk_receive.stop_current_probing = True
         return throughput
+    def manual_evaluate(self):
+        self.convergence_thpt = {}
+        # parameter = self.get_param_string(agent.get_population())
+        parameter = self
+        throughput = 0.
+        self.talk_send.parameters = ','.join(str(e[0]) for e in self.params) #self.best_pop
+        self.talk_receive.parameters = ','.join(str(e[0]) for e in self.params) #self.best_pop
+        while(not self.talk_send.can_start_probing or not self.talk_receive.can_start_probing):
+            time.sleep(0.01)
+        self.talk_send.start_current_probing = True
+        while(throughput == 0.0 and len(self.talk_receive.thpt_list)<1500 and not self.st_client.transfer_done):
+            time.sleep(0.01)
+            thpt_list = self.talk_receive.thpt_list
+            if len(thpt_list) not in self.convergence_thpt:
+                throughput = self.find_convergence(thpt_list)
+                self.convergence_thpt[len(thpt_list)] = throughput
+            else:
+                throughput = self.convergence_thpt[len(thpt_list)]
+#        print("[Throughput] list" + str(self.talk_receive.thpt_list))
+        if throughput == 0.:
+            throughput = self.find_average_thpt(self.talk_receive.thpt_list)
+        # agent.set_avg_thpt(self.find_average_thpt(self.talk_receive.thpt_list))
+        self.talk_receive.thpt_list = []
+        self.talk_receive.stop_current_probing = True
+        return throughput
     def find_convergence(self, thpt_list):
         if(self.conv == "ar"):
             return self.find_convergence_timeseries(thpt_list)
@@ -777,6 +828,10 @@ if __name__=="__main__":
                     help='Method of algorithm to use')
     parser.add_argument('--conv', type=str,
                     help='Method of algorithm to use')
+    parser.add_argument('--manual', type=bool, default=False,
+                    help='whether or not to use manual transfers')
+    parser.add_argument('--num', type=int,
+                    help='value of static parameter')
     args = parser.parse_args()
     print("Argument values:")
     print(args.sender)
@@ -786,5 +841,5 @@ if __name__=="__main__":
     if(not args.conv):
         args.method = "avg"
     ga = GA(args)
-
+    
             
