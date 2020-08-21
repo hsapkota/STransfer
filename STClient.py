@@ -295,11 +295,11 @@ class GA:
         self.selection_type = "standard_deviation_elitist"
         
         if(args.manual):
-            self.params = [[args.num, 128], [37, 256], [12, 260], [1, 132], [1, 128], [1, 256], [1, 128]] #12 29 24 27 8 34 7
-            self.param_length = [0,0,0,0,0,0,0]#[4, 6, 6, 6, 4, 6, 4]
+            self.params = [[args.num, 128], [37, 256], [12, 260], [1, 132], [1, 256], [1, 128]]
+            self.param_length = [0,0,0,0,0,0]
         else:
-            self.params = [[3, 128], [10, 256], [12, 260], [128, 132], [8, 128], [10, 256], [3, 128]] #12 29 24 27 8 34 7
-            self.param_length = [0,8,0,0,0,8,0]#[4, 6, 6, 6, 4, 6, 4]
+            self.params = [[2, 128], [37, 256], [12, 260], [1, 132], [1, 128], [1, 128]]
+            self.param_length = [4,0,0,4,0,4]
         self.population_length = 0
         self.agents = []
         self.talk_send = None
@@ -386,7 +386,7 @@ class GA:
         self.st_client = STClient(args)
         self.st_client.max_read_threads = self.params[0][0]+2**self.param_length[0]+1
         self.st_client.max_transfer_threads = self.params[4][0]+2**self.param_length[4]+1
-        self.st_client.max_write_threads = self.params[6][0]+2**self.param_length[6]+1
+        self.st_client.max_write_threads = self.params[5][0]+2**self.param_length[5]+1
         self.st_client.start_time = int(time.time()*1000)
         self.talk_send = TalkSend(self.st_client)
         self.talk_receive = TalkReceive(self.st_client, self.talk_send)

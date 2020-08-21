@@ -223,6 +223,8 @@ public class STReceiver {
     }
     public void startProbing(){
         this.startWriteThreads(this.numberOfWrite);
+
+        //Comment out next line to not set TCP Receive buffer.
         this.setTCPBuffer(this.numberOfReceive);
     }
     class OpenTransferThread implements Runnable{
@@ -535,13 +537,13 @@ public class STReceiver {
                 String[] params = messages[1].split(",");
                 this.stReceiver.sizeOfQueue = queueSize;//Integer.parseInt(params[5]);
                 this.stReceiver.numberOfReceive = Integer.parseInt(params[4]);
-                this.stReceiver.tcpBuffer = Integer.parseInt(params[5]) * 1024;
+                this.stReceiver.tcpBuffer = Integer.parseInt(params[1]) * 1024 * 1024;
                 ///*
                 synchronized (STReceiver.blocks){
                     STReceiver.blocks = new LinkedBlockingQueue<>(this.stReceiver.sizeOfQueue);
                 }
                 //*/
-                this.stReceiver.numberOfWrite = Integer.parseInt(params[6]);
+                this.stReceiver.numberOfWrite = Integer.parseInt(params[5]);
                 System.out.println("Parameter: "+messages[1]);
                 return "ok";
             }else if(messages[0].equalsIgnoreCase("get throughput")){

@@ -126,6 +126,9 @@ public class STSender {
         if(count <= this.sendBlocks.size()) {
             for (int i = 0; i < count; i++) {
                 this.sendBlocks.get(i).startThread();
+
+
+                //* Comment out this try block to not set send buffer size
                 try {
                     while (this.sendBlocks.get(i).s == null){
                         Thread.sleep(10);
@@ -136,6 +139,8 @@ public class STSender {
                 }catch (IOException ee) {
 
                 }
+                //*/
+
             }
         }
     }
@@ -547,7 +552,7 @@ public class STSender {
                 String[] params = messages[1].split(",");
 
                 this.stSender.numberOfRead = Integer.parseInt(params[0]);
-                this.stSender.tcpBuffer = Integer.parseInt(params[1]) * 1024;
+                this.stSender.tcpBuffer = Integer.parseInt(params[1]) * 1024 * 1024;
 
 //                synchronized (STSender.blocks){
 //                    STSender.blocks = new LinkedBlockingQueue<>(this.stSender.sizeOfQueue);
