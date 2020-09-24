@@ -9,7 +9,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 public class STSender {
-    private int sizeOfQueue = 100;
+    private int sizeOfQueue = 80;
     private int tcpBuffer = 100;
     private String receiverIP = "192.168.1.1";
     private int receiverPort = 48892;
@@ -23,7 +23,7 @@ public class STSender {
     String status = "TRANSFER";
     private Boolean transferDone = false;
     private String fromDir = "/data/aalhussen/10Mfiles";
-    private static Queue<TransferFile> files = new LinkedList<TransferFile>();//Collections.asLifoQueue(new ArrayDeque<>());
+    private static Queue<TransferFile> files = new LinkedList<TransferFile>();//Collections.asLifoQueue(new ArrayDeque<TransferFile>());//new LinkedList<TransferFile>();
     private ExecutorService readPool = Executors.newFixedThreadPool(200);
     private HashMap<Integer, STSender.ReadBlock> readBlocks = new HashMap<>();
     private ExecutorService sendPool = Executors.newFixedThreadPool(200);
@@ -121,14 +121,13 @@ public class STSender {
     }
     public void startSendThreads(int count){
         this.stopAllSendThreads();
-        System.out.println("" + count + " and the total send threads are "+this.sendBlocks.size());
         //this.printUsage();
         if(count <= this.sendBlocks.size()) {
             for (int i = 0; i < count; i++) {
                 this.sendBlocks.get(i).startThread();
 
 
-                //* Comment out this try block to not set send buffer size
+                /* Comment out this try block to not set send buffer size
                 try {
                     while (this.sendBlocks.get(i).s == null){
                         Thread.sleep(10);
@@ -283,15 +282,14 @@ public class STSender {
                         dos.writeLong(currentBlock.fileId);
                         dos.writeLong(currentBlock.blockId);
 
-
-                        for (Buffer buffer : currentBlock.byteArray) {
+                        //for (Buffer buffer : currentBlock.byteArray) {
                             //long st_tim = System.currentTimeMillis();
-                            dos.write(buffer.small_buffer, 0, buffer.length);
+                            dos.write(currentBlock.byteArray.small_buffer, 0, currentBlock.byteArray.length);
                             //long new_st_tim = System.currentTimeMillis();
-                            buffer.small_buffer = null;
+                            currentBlock.byteArray = null;
                             //long latest_st = System.currentTimeMillis();
                             //System.out.println("Sent Blockid = "+currentBlock.blockId+" and send time "+ (new_st_tim-st_tim)+"ms and add time "+(latest_st-new_st_tim)+"ms");
-                        }
+                        //}
                         //System.out.println("[Block Sent] fileId: " + currentBlock.fileId + " Blockid: " + currentBlock.blockId + " total queue size "+STSender.blocks.size());
                         if (this.stSender.debug) {
                             System.out.println("[Block Sent "+System.currentTimeMillis()+"] fileId: " + currentBlock.fileId + " Blockid: " + currentBlock.blockId);
@@ -348,18 +346,24 @@ public class STSender {
                         this.stSender.fileFinished = true;
                     }
                     head = STSender.files.poll();
-                    if(head!=null){
-                        blockId = head.blockId;
-                        head.blockId++;
-                        newOffset = head.offset;
-                        length = Math.min(this.stSender.blockSize, head.length - newOffset);
-                        head.offset += length;
-                        if (head.offset < head.length) {
-                            STSender.files.add(head);
-                        }else if (this.stSender.last_file_id < this.stSender.total_files){
-                            STSender.files.add(new TransferFile(head.file, head.filename, 0l, head.length, this.stSender.last_file_id++));
-                            STSender.totalByteToSend += head.length;
+                    try{
+                        if(head!=null){
+                            blockId = head.blockId;
+                            head.blockId++;
+                            newOffset = head.offset;
+                            length = Math.min(this.stSender.blockSize, head.length - newOffset);
+                            head.offset += length;
+                            fis = new FileInputStream(head.file);
+
+                            if (head.offset < head.length) {
+                                STSender.files.add(head);
+                            }else if (this.stSender.last_file_id < this.stSender.total_files * 1){
+                                STSender.files.add(new TransferFile(head.file, head.filename, 0l, head.length, this.stSender.last_file_id++));
+                                STSender.totalByteToSend += head.length;
+                            }
                         }
+                    } catch(FileNotFoundException eee){
+                        eee.printStackTrace();
                     }
                 }
                 try {
@@ -378,30 +382,46 @@ public class STSender {
                     currentBlock.fileId = head.fileId;
                     currentBlock.blockId = blockId;
                     currentBlock.fileLength = head.length;
-
-                    byte[] buffer = new byte[(int)buffer_size];
-
-                    if(this.stSender.debug) {
-                        System.out.println("[Block Load "+System.currentTimeMillis()+" started] "+currentBlock.filename + " fileId: " + currentBlock.fileId + " blockId: " + currentBlock.blockId +
-                                " offset: " + currentBlock.offset + " length: " + currentBlock.length + " fileLength: " +
-                                currentBlock.fileLength + " blockLoaded: "+ currentBlock.bufferLoaded + " threadName: "+Thread.currentThread().getName());
+                    
+                    
+                    if (currentBlock.offset > 0) {
+                        fis.getChannel().position(currentBlock.offset);
                     }
-                    while ((int) Math.min(buffer.length, currentBlock.length - currentBlock.tillNow) > 0) {
-                        n = (int) Math.min(buffer.length, currentBlock.length - currentBlock.tillNow);
+                    
+                    long st_start = System.currentTimeMillis();
+                    byte[] buffer = new byte[(int)length];
+                    long stt_start = System.currentTimeMillis();
+
+                   
+                    int read_till = 0;
+                    while (read_till < buffer.length) {
+                        n = fis.read(buffer, read_till, (int)Math.min(128 *1024l, buffer.length - read_till));
+                        read_till += n;
+
+                    }
+                    n = read_till;
+                    if (n > 0) { //(n = fis.read(buffer, 0, (int) buffer.length))
+                        if (Thread.currentThread().getName().equalsIgnoreCase("pool-4-thread-1")) {
+                            System.out.println("[Block Loaded "+ STSender.blocks.size() +"] "+ " fileId: " + currentBlock.fileId + " blockId: " + 
+                                currentBlock.blockId + ", block read time = " + (System.currentTimeMillis() - stt_start) + " ms, buffer create time = " + 
+                                (stt_start - st_start) + " ms, and block size is " + n + ", buffer size = " + buffer.length + ", ");
+                        }
                         currentBlock.add_buffer(buffer, n);
                         if (currentBlock.tillNow >= currentBlock.length) {
                             boolean isSuccess = false;
                             while (!isSuccess) {
-                                isSuccess =  STSender.blocks.offer(currentBlock, 100, TimeUnit.MILLISECONDS);
+                                isSuccess =  STSender.blocks.offer(currentBlock, 10, TimeUnit.MILLISECONDS);
                             }
                             currentBlock.bufferLoaded = true;
                             if(this.stSender.debug) {
-                                System.out.println("[Block Loaded "+System.currentTimeMillis()+"] "+currentBlock.filename + " fileId: " + currentBlock.fileId + " blockId: " + currentBlock.blockId +
-                                        " offset: " + currentBlock.offset + " length: " + currentBlock.length + " fileLength: " +
-                                        currentBlock.fileLength + " blockLoaded: "+ currentBlock.bufferLoaded + " threadName: "+Thread.currentThread().getName());
+                                System.out.println("[Block Loaded "+ STSender.blocks.size() +"] "+ " fileId: " + currentBlock.fileId + " blockId: " + 
+                                    currentBlock.blockId + ", block load time = " + (System.currentTimeMillis() - st_start) + " ms, " +
+                                    " offset: " + currentBlock.offset + " length: " + currentBlock.length + " threadName: "+Thread.currentThread().getName());
                             }
                         }
                     }
+
+
                     //Might need to initiate buffer to null and to buffer_size again
                 } catch (Exception e) {
                     e.printStackTrace();
@@ -433,7 +453,7 @@ public class STSender {
         long fileLength = 0l;
         boolean written = false;
         long blockId = 0l;
-        List<Buffer> byteArray;
+        Buffer byteArray;
         long tillNow = 0l;
         boolean bufferLoaded = false;
 
@@ -441,12 +461,9 @@ public class STSender {
         Block(long offset, long length){
             this.offset = offset;
             this.length = length;
-            byteArray = new ArrayList<Buffer>();
-
-
         }
         void add_buffer(byte[] bff, int buffer_size){
-            byteArray.add(new Buffer(bff, buffer_size));
+            byteArray = new Buffer(bff, buffer_size);
             tillNow += buffer_size;
 
         }
@@ -463,7 +480,7 @@ public class STSender {
         int length;
 
         Buffer(byte[] buffer, int buffer_size){
-            small_buffer = Arrays.copyOf(buffer, buffer_size);
+            small_buffer = buffer;
             length = buffer_size;
         }
     }

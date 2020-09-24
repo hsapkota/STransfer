@@ -14,12 +14,8 @@ import time
 from threading import Thread
 import bisect as _bisect
 import argparse
-from statsmodels.tsa.ar_model import AR
-from sklearn.externals import joblib
-import adaptive_iterative
+# from statsmodels.tsa.ar_model import AR
 import warnings
-warnings.filterwarnings('ignore', 'statsmodels.tsa.ar_model.AR', FutureWarning)
-warnings.filterwarnings("ignore",category=FutureWarning)
 
 def print_message(message):
     print(message)
@@ -281,6 +277,8 @@ class TalkReceive(Thread):
     def set_parameter(self, param):
         self.parameters = param
 
+
+
 class GA:
     def __init__(self, args):
         self.number_of_generations = 4
@@ -298,8 +296,8 @@ class GA:
             self.params = [[args.num, 128], [37, 256], [12, 260], [1, 132], [1, 256], [1, 128]]
             self.param_length = [0,0,0,0,0,0]
         else:
-            self.params = [[2, 128], [37, 256], [12, 260], [1, 132], [1, 128], [1, 128]]
-            self.param_length = [4,0,0,4,0,4]
+            self.params = [[1, 128], [1, 256], [10, 260], [50, 132], [1, 128], [1, 128]]
+            self.param_length = [0,0,0,0,4,5]
         self.population_length = 0
         self.agents = []
         self.talk_send = None
@@ -314,13 +312,13 @@ class GA:
                 self.population_length += i
             for i in range(self.number_of_population):
                 self.agents.append(Agents(population="", population_length=self.population_length))
-            if(self.conv == "dnn"):
-                self.load_clfs()
-                print("[+] CLF's loaded")
-            if(self.conv == "rand"):
-                adaptive_iterative.regression_train()
-                adaptive_iterative.classification_train()
-                print("[+] CLF's loaded")
+            # if(self.conv == "dnn"):
+            #     self.load_clfs()
+            #     print("[+] CLF's loaded")
+            # if(self.conv == "rand"):
+            #     adaptive_iterative.regression_train()
+            #     adaptive_iterative.classification_train()
+            #     print("[+] CLF's loaded")
             print("[+] Conv is ", self.conv)
             self.mutation_probab = 1.0#/self.population_length
             self.crossover_probab = 1.0
@@ -650,38 +648,37 @@ class GA:
         self.talk_receive.stop_current_probing = True
         return throughput
     def find_convergence(self, thpt_list):
-        if(self.conv == "ar"):
-            return self.find_convergence_timeseries(thpt_list)
-        elif(self.conv == "dnn"):
-            return self.find_convergence_dnn(thpt_list)
-        elif self.conv == "rand":
-            if len(thpt_list) >= 2 and adaptive_iterative.is_predictable(thpt_list):
-                print(thpt_list)
-                return adaptive_iterative.make_prediction(thpt_list)
-            else:
-                return 0.0
-        else:
-            return self.find_average_thpt(thpt_list) if len(thpt_list)>=10 else 0.0
-    def find_convergence_timeseries(self, thpt_list):
-        if(len(thpt_list)<4):
-            return 0.
-        if(len(thpt_list)>15):
-            return self.find_average_thpt(thpt_list)
-        tmp = [0]+thpt_list[:-1]
-        model = AR(tmp)
-        start_params = [0, 0, 1]
+        # if(self.conv == "ar"):
+        #     return self.find_convergence_timeseries(thpt_list)
+        # elif(self.conv == "dnn"):
+        #     return self.find_convergence_dnn(thpt_list)
+        # elif self.conv == "rand":
+        #     if len(thpt_list) >= 2 and adaptive_iterative.is_predictable(thpt_list):
+        #         print(thpt_list)
+        #         return adaptive_iterative.make_prediction(thpt_list)
+        #     else:
+        #         return 0.0
+        return self.find_average_thpt(thpt_list) if len(thpt_list)>=10 else 0.0
+    # def find_convergence_timeseries(self, thpt_list):
+    #     if(len(thpt_list)<4):
+    #         return 0.
+    #     if(len(thpt_list)>15):
+    #         return self.find_average_thpt(thpt_list)
+    #     tmp = [0]+thpt_list[:-1]
+    #     model = AR(tmp)
+    #     start_params = [0, 0, 1]
         
-        model_fit = model.fit(maxlag=1, start_params=start_params, disp=-1)
-        predicted_last = model_fit.predict(len(tmp), len(tmp))[0]
-        last_pt = thpt_list[-1]
+    #     model_fit = model.fit(maxlag=1, start_params=start_params, disp=-1)
+    #     predicted_last = model_fit.predict(len(tmp), len(tmp))[0]
+    #     last_pt = thpt_list[-1]
         
-        if( (last_pt != 0.) and (predicted_last - last_pt)/last_pt < 0.1):
-            return predicted_last
-        return 0.
-    def load_clfs(self):
-        self.all_clfs = {}
-        for i in range(3, 16):
-            self.all_clfs[i] = joblib.load("./clfs/pronghorn-10-%d-42-percentage-optimal.pkl"%i)
+    #     if( (last_pt != 0.) and (predicted_last - last_pt)/last_pt < 0.1):
+    #         return predicted_last
+    #     return 0.
+    # def load_clfs(self):
+    #     self.all_clfs = {}
+    #     for i in range(3, 16):
+    #         self.all_clfs[i] = joblib.load("./clfs/pronghorn-10-%d-42-percentage-optimal.pkl"%i)
     def get_percentage_change_thpts(self, thpt_list):
         if len(thpt_list) <= 1:
             return []
@@ -693,26 +690,26 @@ class GA:
             prev_thpt = thpt_list[index]
         return new_thpt
     
-    def find_convergence_dnn(self, thpt_list):
-        threshold = 1.0
-#        print("Actual Thpt list", thpt_list)
-#        print(thpt_list)
-        prev_thpt_list = thpt_list
-        thpt_list = self.get_percentage_change_thpts(thpt_list)
-#        print("Percentage Change thpt", thpt_list)
-#        print(thpt_list)
-        if len(thpt_list)<3:
-            return 0
-        elif len(thpt_list)>=15:
-            return self.find_average_thpt(thpt_list)
-        i = len(thpt_list)
-        y_pred = self.all_clfs[i].predict_proba([thpt_list])[0]
-        max_, ind_ = self.get_max_and_index(y_pred)
-        print("[+] ", max_, threshold - 0.05*(len(thpt_list) - 2), ind_, i, len(prev_thpt_list))
-#        print("CT", ind_, " Prediction probability", max_, " Threshold", threshold - 0.05*(len(thpt_list) - 2))
-        if(max_ > (threshold - 0.05*(len(thpt_list) - 2)) and ind_+2 <= i+1):
-            return self.find_average_thpt(prev_thpt_list)
-        return 0.0
+#     def find_convergence_dnn(self, thpt_list):
+#         threshold = 1.0
+# #        print("Actual Thpt list", thpt_list)
+# #        print(thpt_list)
+#         prev_thpt_list = thpt_list
+#         thpt_list = self.get_percentage_change_thpts(thpt_list)
+# #        print("Percentage Change thpt", thpt_list)
+# #        print(thpt_list)
+#         if len(thpt_list)<3:
+#             return 0
+#         elif len(thpt_list)>=15:
+#             return self.find_average_thpt(thpt_list)
+#         i = len(thpt_list)
+#         y_pred = self.all_clfs[i].predict_proba([thpt_list])[0]
+#         max_, ind_ = self.get_max_and_index(y_pred)
+#         print("[+] ", max_, threshold - 0.05*(len(thpt_list) - 2), ind_, i, len(prev_thpt_list))
+# #        print("CT", ind_, " Prediction probability", max_, " Threshold", threshold - 0.05*(len(thpt_list) - 2))
+#         if(max_ > (threshold - 0.05*(len(thpt_list) - 2)) and ind_+2 <= i+1):
+#             return self.find_average_thpt(prev_thpt_list)
+#         return 0.0
     def get_max_and_index(self, lis):
         max_ = lis[0]
         ind_ = 0
@@ -840,6 +837,9 @@ if __name__=="__main__":
         args.method = "GA"
     if(not args.conv):
         args.method = "avg"
-    ga = GA(args)
+    try:
+        ga = GA(args)
+    except KeyboardInterrupt:
+        exit(0)
     
             

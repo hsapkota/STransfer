@@ -12,7 +12,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Modifier;
 
 public class STReceiver {
-    private int queueSize = 10;
+    private int queueSize = 15;
     private int tcpBuffer = 100;
     private int numberOfWrite = 2;
     private int sizeOfQueue = 100;
@@ -37,7 +37,7 @@ public class STReceiver {
     private HashMap<Integer, STReceiver.WriteBlock> writeBlocks = new HashMap<>();
     private ExecutorService receivePool = Executors.newFixedThreadPool(200);
     private HashMap<Integer, STReceiver.ReceiveFile> receiveBlocks = new HashMap<>();
-    private static LinkedBlockingQueue<Block> blocks = new LinkedBlockingQueue<>(1500);
+    private static LinkedBlockingQueue<Block> blocks = new LinkedBlockingQueue<>(15);
     private HashMap<String, RandomAccessFile> filesNames = new HashMap<>();
 
     private static void printUsage() {
@@ -75,6 +75,7 @@ public class STReceiver {
         long lastCertainTime = 0l;
         OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
         Method my_method = null;
+	/*
         for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
             method.setAccessible(true);
             if (method.getName().startsWith("getProcessCpuLoad")
@@ -87,6 +88,8 @@ public class STReceiver {
                 } // try
             } // if
         } // for
+
+	//*/
         while(!str.transferDone){
             if(str.startTime != 0) {
                 long totalTransfer = str.totalTransferDone.get();
@@ -112,9 +115,11 @@ public class STReceiver {
                                 "MB in time: " + (System.currentTimeMillis() - str.startTime) / 1000. +
                                 " seconds and Throughput is:" + avgThpt + "Mbps time: " + timeInterval + " tnsferDone: " + (totalW-tillCertainTransfer) + " blocks: "+STReceiver.blocks.size());
                         //*/
+                       
+                        ///*
                         System.out.println("Transfer Done till: " + totalW / (1024. * 1024.) + "MB in time: "+(System.currentTimeMillis() - str.startTime) / 1000. +
-                                " seconds and thpt is: "+avgThpt+" Mbps"  + " blocks: "+STReceiver.blocks.size());
-                        
+                                " seconds and thpt is: "+thpt+" Mbps"  + " blocks: "+STReceiver.blocks.size());
+                        //*/
                         // OperatingSystemMXBean operatingSystemMXBean = ManagementFactory.getOperatingSystemMXBean();
                         // for (Method method : operatingSystemMXBean.getClass().getDeclaredMethods()) {
                         //     method.setAccessible(true);
@@ -225,7 +230,7 @@ public class STReceiver {
         this.startWriteThreads(this.numberOfWrite);
 
         //Comment out next line to not set TCP Receive buffer.
-        this.setTCPBuffer(this.numberOfReceive);
+        //this.setTCPBuffer(this.numberOfReceive);
     }
     class OpenTransferThread implements Runnable{
         STReceiver stReceiver = null;
@@ -310,80 +315,8 @@ public class STReceiver {
         int length;
 
         Buffer(byte[] buffer, int buffer_size){
-            small_buffer = Arrays.copyOf(buffer, buffer_size);
+            small_buffer = buffer;//Arrays.copyOf(buffer, buffer_size);
             length = buffer_size;
-        }
-    }
-    class WriteBlock implements Runnable{
-        STReceiver stReceiver = null;
-        boolean waitNext = false;
-        WriteBlock(STReceiver str){
-            this.stReceiver = str;
-        }
-        void stopThread(){this.waitNext = true;}
-        void startThread(){this.waitNext=false;}
-
-        @Override
-        public void run() {
-            if(this.stReceiver.debug) {
-                System.out.println("[+] Write Thread-" + Thread.currentThread().getName() + " has Started.");
-            }
-            //Start reading block and write to this.stSender.blocks
-            while(true){
-                Block currentBlock = null;
-                while(STReceiver.blocks.isEmpty()){
-                    try {
-                        Thread.sleep(10);
-                    } catch (InterruptedException e) {
-                        e.printStackTrace();
-                    }
-                }
-                try {
-                    currentBlock = STReceiver.blocks.poll(50, TimeUnit.MILLISECONDS);
-                    if(currentBlock == null) {
-                        try {
-                            Thread.sleep(10);
-                        } catch (InterruptedException e) {
-                            e.printStackTrace();
-                        }
-                        if(this.stReceiver.transferDone &&
-                                STReceiver.blocks.size() == 0){
-                            break;
-                        }
-                        continue;
-                    }
-                    long st_wite = System.currentTimeMillis();
-                    String filename = this.stReceiver.toDir + "/" + currentBlock.filename;
-                    RandomAccessFile randomAccessFile = filesNames.remove(filename);
-                    if(randomAccessFile == null) {
-                        randomAccessFile = new RandomAccessFile(filename, "rw");
-                    }
-                    if (currentBlock.offset > 0) {
-                        randomAccessFile.getChannel().position(currentBlock.offset);
-                    }
-                    for(Buffer buffer: currentBlock.byteArray){
-                        randomAccessFile.write(buffer.small_buffer, 0, buffer.length);
-
-                        buffer.small_buffer = null;
-                    }
-                    if(this.stReceiver.filesNames.containsKey(filename)){
-                        randomAccessFile.close();
-                    }else {
-                        filesNames.put(filename, randomAccessFile);
-                    }
-
-                    long done_wrt = System.currentTimeMillis();
-                    //System.out.println("[+] Block is done of blockId"+currentBlock.blockId+ " in total time "+(done_wrt-currentBlock.startTime)+"ms & and write time "+(done_wrt-st_wite)+"ms total bolcks is "+STReceiver.blocks.size());
-
-                    if(this.stReceiver.debug){
-                        System.out.println("[Block Written "+System.currentTimeMillis()+"] fileId: "+currentBlock.fileId+" blockId: "+currentBlock.blockId + " offset: "+currentBlock.offset +
-                                " threadName:"+Thread.currentThread().getName());
-                    }
-                    currentBlock = null;
-                }catch(Exception e){
-                    e.printStackTrace();
-                }
-            }
         }
     }
     class ReceiveFile implements Runnable{
@@ -444,7 +377,6 @@ public class STReceiver {
                         long blockId = dataInputStream.readLong();
 
                         Block currentBlock = new Block(offset, length);
-                        currentBlock.startTime = System.currentTimeMillis();
                         currentBlock.setFilename(filename);
                         currentBlock.setFileId(fileId);
                         currentBlock.setBlockId(blockId);
@@ -453,20 +385,43 @@ public class STReceiver {
                                     " offset: " + currentBlock.offset + " length: " + currentBlock.length + " blockLoaded: " + currentBlock.written);
                         }
                         byte[] buffer = new byte[maxBufferSize];
+                        byte[] buffer_write = new byte[(new Long(length)).intValue()];
+                        int int_previous_len = 0;
 
 
-                        while (currentBlock.tillNow < currentBlock.length) {
+
+                        long block_receive = 0l;
+                        long st_wite = System.currentTimeMillis();
+                        while (int_previous_len < currentBlock.length) {
                             //long st_tim = System.currentTimeMillis();
-                            read = dataInputStream.read(buffer, 0, (int) Math.min(buffer.length, currentBlock.length - currentBlock.tillNow));
+                            st_wite = System.currentTimeMillis();
+                            read = dataInputStream.read(buffer_write, int_previous_len, (int) Math.min(buffer_write.length, length - int_previous_len));
+                            int_previous_len += read;
                             totalTransferDone.addAndGet(read);
+                            block_receive += (System.currentTimeMillis() - st_wite);
                             //long new_st_tim = System.currentTimeMillis();
-                            currentBlock.add_buffer(buffer, read);
-                            totalWriteDone.addAndGet(read);
+
+                            //currentBlock.add_buffer(buffer, read);
                             //totalWriteDone.addAndGet(read);
                             //long latest_st = System.currentTimeMillis();
                             //System.out.println("Receive Blockid = "+currentBlock.blockId+" and read time "+ (new_st_tim-st_tim)+"ms and add time "+(latest_st-new_st_tim)+"ms");
                         }
-                        boolean doneAddition = true;
+                        st_wite = System.currentTimeMillis();
+                        currentBlock.add_buffer(buffer_write, int_previous_len);
+                        long add_block = System.currentTimeMillis() - st_wite;
+                        /*
+                        if (Thread.currentThread().getName().equalsIgnoreCase("pool-3-thread-1")){
+                            System.out.println("[Receive] Block is done of fileId = " + currentBlock.fileId + " & blockId = "+currentBlock.blockId+ " " +
+                                Thread.currentThread().getName() + " curr_time = " + System.currentTimeMillis() +" in block receive time " + block_receive
+                                +" ms & and add block time "+add_block+" ms total bolcks is " + 
+                                STReceiver.blocks.size() + ".");
+                        }
+                        //*/
+                        boolean doneAddition = false;
+                        while(!doneAddition) {
+                            doneAddition = STReceiver.blocks.offer(currentBlock, 10, TimeUnit.MILLISECONDS);
+                        }
+                        currentBlock.startTime = System.currentTimeMillis();
 
                         if(this.stReceiver.debug) {
                             System.out.println("[Block Received "+System.currentTimeMillis()+" Done] " + currentBlock.filename + " fileId: " + currentBlock.fileId + " blockId: " + currentBlock.blockId +
@@ -476,11 +431,99 @@ public class STReceiver {
 
                     } catch (IOException e) {
                         e.printStackTrace();
-                    }
+                    } catch(InterruptedException ee) {
+			ee.printStackTrace();
+		    }
                 }
 //                this.stReceiver.transferDone = true;
             }catch(IOException e){
                 e.printStackTrace();
+            }
+        }
+    }
+    class WriteBlock implements Runnable{
+        STReceiver stReceiver = null;
+        boolean waitNext = false;
+        WriteBlock(STReceiver str){
+            this.stReceiver = str;
+        }
+        void stopThread(){this.waitNext = true;}
+        void startThread(){this.waitNext=false;}
+
+        @Override
+        public void run() {
+            if(this.stReceiver.debug) {
+                System.out.println("[+] Write Thread-" + Thread.currentThread().getName() + " has Started.");
+            }
+            //Start reading block and write to this.stSender.blocks
+            while(true){
+                Block currentBlock = null;
+                while(STReceiver.blocks.isEmpty()){
+                    try {
+                        Thread.sleep(10);
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }
+                try {
+                    currentBlock = STReceiver.blocks.poll(50, TimeUnit.MILLISECONDS);
+                    if(currentBlock == null) {
+                        try {
+                            Thread.sleep(10);
+                        } catch (InterruptedException e) {
+                            e.printStackTrace();
+                        }
+                        if(this.stReceiver.transferDone &&
+                                STReceiver.blocks.size() == 0){
+                            break;
+                        }
+                        continue;
+                    }
+                    //System.out.println("[+] 11 Write Thread-" + Thread.currentThread().getName() + " has Started.");
+                    String filename = this.stReceiver.toDir + "/" + currentBlock.filename;
+                    long st_s_wite = System.currentTimeMillis();
+                    RandomAccessFile randomAccessFile = new RandomAccessFile(filename, "rw");//filesNames.remove(filename);
+                    // System.out.println("[+] Writing on the thread -" + filename + " has Started.");
+                    /*
+                    if(randomAccessFile == null) {
+                        randomAccessFile = new RandomAccessFile(filename, "rw");
+                    }//*/
+                    if (currentBlock.offset > 0) {
+                        randomAccessFile.getChannel().position(currentBlock.offset);
+                    }
+                    long st_wite = System.currentTimeMillis();
+                    for(Buffer buffer: currentBlock.byteArray){
+                        randomAccessFile.write(buffer.small_buffer, 0, buffer.length);
+                        totalWriteDone.addAndGet(buffer.length);
+                        
+                        buffer.small_buffer = null;
+                    }
+                    long done_wrt = System.currentTimeMillis();
+                    /*
+                    if (Thread.currentThread().getName().equalsIgnoreCase("pool-4-thread-1")){
+                        System.out.println("[Write] Block is done of fileId = " + currentBlock.fileId + " & blockId = "+currentBlock.blockId+ " " +
+                            Thread.currentThread().getName() + " curr_time = " + st_s_wite +" in total time " + 
+                            (done_wrt-currentBlock.startTime)+"ms & and write time "+(done_wrt-st_wite)+"ms total bolcks is " + 
+                            STReceiver.blocks.size() + ".");
+                    }
+                    //*/
+                    randomAccessFile.close();
+                    /*
+                    if(this.stReceiver.filesNames.containsKey(filename)){
+                        randomAccessFile.close();
+                    }else {
+                        filesNames.put(filename, randomAccessFile);
+                    }
+                    //*/
+                    if(this.stReceiver.debug){
+                        System.out.println("[Block Written "+System.currentTimeMillis()+"] fileId: "+currentBlock.fileId+" blockId: "+currentBlock.blockId + 
+                                " offset: "+currentBlock.offset +
+                                " threadName:"+Thread.currentThread().getName());
+                    }
+                    currentBlock = null;
+                }catch(Exception e){
+                    e.printStackTrace();
+                }
             }
         }
     }
@@ -529,16 +572,18 @@ public class STReceiver {
                 }
             }else if(messages[0].equalsIgnoreCase("parameter")){
                 System.out.println("Parameter: Done");
+                /*
                 while(STReceiver.blocks.size() !=0){
                     try{
                         Thread.sleep(10);
                     }catch(InterruptedException e){ }
                 }
+                //*/
                 String[] params = messages[1].split(",");
                 this.stReceiver.sizeOfQueue = queueSize;//Integer.parseInt(params[5]);
                 this.stReceiver.numberOfReceive = Integer.parseInt(params[4]);
                 this.stReceiver.tcpBuffer = Integer.parseInt(params[1]) * 1024 * 1024;
-                ///*
+                /*
                 synchronized (STReceiver.blocks){
                     STReceiver.blocks = new LinkedBlockingQueue<>(this.stReceiver.sizeOfQueue);
                 }
@@ -583,6 +628,7 @@ public class STReceiver {
                 this.stReceiver.receivePool = Executors.newFixedThreadPool(Integer.parseInt(this.readFromClient.readLine().trim()));
                 this.stReceiver.writePool = Executors.newFixedThreadPool(Integer.parseInt(this.readFromClient.readLine().trim()));
                 this.stReceiver.blocks = new LinkedBlockingQueue<>(Integer.parseInt(this.readFromClient.readLine().trim()));
+                this.stReceiver.blocks = new LinkedBlockingQueue<>(15);
                 this.stReceiver.maxBufferSize = Integer.parseInt(this.readFromClient.readLine().trim());
                 this.stReceiver.startListeningToSender();
                 this.sendMessage(""+this.stReceiver.getTransferPort());
